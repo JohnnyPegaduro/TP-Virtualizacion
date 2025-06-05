@@ -1,0 +1,113 @@
+
+# Código del procedimiento TP - Virtualización en Arquitectura y Sistemas Operativos
+
+## 1. Parte VM (Ubuntu 22.04 Server)
+
+### 1.1 Instalar dependencias
+```bash
+sudo apt-get update
+sudo apt-get -y install python3 curl htop python3-pip
+pip3 install pandas matplotlib
+```
+
+### 1.2 Crear carpeta y archivo HTML
+```bash
+mkdir -p ~/www
+cd ~/www
+echo "Hola Mundo" > index.html
+```
+
+### 1.3 Medir uso de RAM antes de iniciar servidor
+```bash
+used_before=$(free -m | awk 'NR==2 {print $3}')
+echo "RAM usada antes: ${used_before} MB"
+```
+
+### 1.4 Arrancar servidor HTTP de Python en segundo plano
+```bash
+cd ~/www
+python3 -m http.server 8000 &
+# Anotar el PID (por ejemplo, [1] 2400)
+```
+
+### 1.5 Medir uso de RAM después de iniciar servidor
+```bash
+used_after=$(free -m | awk 'NR==2 {print $3}')
+echo "RAM usada después: ${used_after} MB"
+diff=$((used_after - used_before))
+echo "RAM usada adicional: ${diff} MB (antes ${used_before} MB → después ${used_after} MB)"
+```
+
+### 1.6 Verificar localmente en la VM
+```bash
+curl http://localhost:8000/index.html       # debe imprimir "Hola Mundo"
+curl -o /dev/null -s -w "Código: %{http_code} Tiempo: %{time_total}s\n" http://localhost:8000/index.html
+# Debe devolver "Código: 200" y un time_total muy bajo (≈ 0.002 s)
+```
+
+### 1.7 Monitoreo con htop (opcional)
+```bash
+htop
+# Buscar proceso "python3 -m http.server"
+# Observar %MEM (≈ 1.8 % ≈ 18 MB) y %CPU al ejecutar peticiones
+```
+
+### 1.8 Obtener dirección IP de la VM
+```bash
+ip a | grep 'inet ' | grep -v '127.0.0.1'
+# Anotar la IP (por ejemplo, 192.168.0.56)
+```
+
+
+## 2. Parte Host (Windows PowerShell)
+
+### 2.1 Definir variable con IP de la VM
+```powershell
+$VM_IP = "192.168.0.56"
+```
+
+### 2.2 Verificar conectividad con ping
+```powershell
+ping $VM_IP
+# Debe responder "Reply from 192.168.0.56"
+```
+
+### 2.3 Probar respuesta HTTP y contenido
+```powershell
+curl.exe "http://$($VM_IP):8000/index.html"
+# Debe mostrar "Hola Mundo"
+```
+
+### 2.4 Medir código HTTP y tiempo (petición única)
+```powershell
+curl.exe -o $null -s -w "Código: %{http_code} Tiempo: %{time_total}s`n" "http://$($VM_IP):8000/index.html"
+# Debe mostrar "Código: 200" y "Tiempo: 0.0XX s"
+```
+
+### 2.5 Recoger 5 muestras de tiempo y guardarlas en vm_times.txt
+```powershell
+Remove-Item .\vm_times.txt -ErrorAction SilentlyContinue
+for ($i = 1; $i -le 5; $i++) {
+    curl.exe -o $null -s -w "%{time_total}`n" "http://$($VM_IP):8000/index.html" >> vm_times.txt
+}
+Get-Content .\vm_times.txt   # Muestra cinco líneas con tiempos
+```
+
+### 2.6 Calcular tiempo promedio
+```powershell
+$tiempos = Get-Content .\vm_times.txt | ForEach-Object { [double]$_ }
+$prom = ($tiempos | Measure-Object -Average).Average
+"Tiempo promedio VM: {0:N5} s" -f $prom
+# Resultado ejemplo: "Tiempo promedio VM: 0.03225 s"
+```
+
+### 2.7 Detener el servidor en la VM
+```bash
+# En la VM, ejecutar:
+pkill -f "python3 -m http.server"
+# Desde PowerShell, verificar:
+curl.exe -o $null -s -w "Código: %{http_code}`n" "http://$($VM_IP):8000/index.html"
+# Debe mostrar "curl: (7) Failed to connect ..." indicando que el servidor se detuvo
+```
+
+
